@@ -7,10 +7,10 @@ import json
 with open('./config.json', 'r') as file:
     config = json.load(file)
 
-consumer_key = config['twitter_consumer_key']
-consumer_secret = config['twitter_consumer_secret']
-access_token = config['twitter_access_token']
-access_token_secret = config['twitter_access_token_secret']
+consumer_key = config['twitter']['consumer_key']
+consumer_secret = config['twitter']['consumer_secret']
+access_token = config['twitter']['access_token']
+access_token_secret = config['twitter']['access_token_secret']
 
 # Twitter authentication
 auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
