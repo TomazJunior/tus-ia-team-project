@@ -5,4 +5,7 @@ config.json
 # ignore OS file
 .DS_Store
 
+# ignore Jupyter checkpoints
+.ipynb_checkpoints
+
 env/
