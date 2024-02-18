@@ -1,7 +1,8 @@
 config.json
-
 # bitcoin_tweets dataset is too big to store in github
 /data/bitcoin_tweets_original.csv
 
-# avoid storing mac os file
+# ignore OS file
 .DS_Store
+
+env/

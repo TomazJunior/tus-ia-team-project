@@ -4,6 +4,11 @@ Engineering Team Project for IA Master
 
 ### Configuration
 
+#### Installing the necessary packages
+
+1. All packages are listed in the requirements.txt
+2. Simply run 'pip install -r requirements.txt' in your projects virtual environment
+
 #### Setting up config.json
 
 1. Create a file named config.json in the root directory of the project.
