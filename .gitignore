@@ -1,2 +1,4 @@
 config.json
 env/
+data/mbsa.csv
+data/pre_prediction_data.csv
