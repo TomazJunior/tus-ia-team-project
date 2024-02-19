@@ -1,4 +1,13 @@
 config.json
+# bitcoin_tweets dataset is too big to store in github
+/data/bitcoin_tweets_original.csv
+
+# ignore OS file
+.DS_Store
+
+# ignore Jupyter checkpoints
+.ipynb_checkpoints
+
 env/
 data/mbsa.csv
 data/pre_prediction_data.csv
