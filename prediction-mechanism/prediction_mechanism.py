@@ -11,20 +11,18 @@ from statsmodels.tsa.stattools import adfuller
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 import pmdarima as pm
 import datetime
+from sklearn.preprocessing import LabelEncoder
 
 def setUpTheData():
-    df = pd.DataFrame(yf.download('BTC-USD'))
+    df = pd.DataFrame(yf.download('BTC-USD', start='2021-01-01', end='2021-12-31'))
     df = df.drop(['Open', 'High', 'Low', 'Close', 'Volume'], axis=1)
-    sample_sentiment = []
-    for i in range(len(df['Adj Close'])):
-        #initially setting up sample sentiment values until real data available
-        sample_sentiment.append(random.choice([.1,.2,.3,.4,.5,.6,.7,.8,.9,1.0]))
-    df['Sentiment'] = sample_sentiment
-    df['Date'] = pd.to_datetime(df['Date'])
-    df = df.set_index('Date') 
-    df = df.loc['2022-01-01':'2022-12-31']
+    print(df.info())
+    # df['Date'] = pd.to_datetime(df['date'])
+    # df = df.set_index('Date') 
+    # df = df.loc['2021-01-01':'2021-12-31']
     df.to_csv('data/bitcoin_2022_dataset.csv')
 
+setUpTheData()
 #Make the time series stationary
 df = pd.read_csv('data/bitcoin_2022_dataset.csv')
 original_df = df.copy()
@@ -108,23 +106,53 @@ def auto_arima(orig_df):
 
 auto_p_d_q, differenced_by_auto_arima, fitted_residuals = auto_arima(original_df)
 
-def model(df, p_d_q):    
-    time_series = np.log(df)
-    model = ARIMA(time_series, order = p_d_q)
-    fitted = model.fit()
-    fc = fitted.get_forecast(7) 
-    fc = (fc.summary_frame(alpha=0.05))
-    fc_mean = fc['mean']
-    fc_lower = fc['mean_ci_lower']
-    fc_upper = fc['mean_ci_upper'] 
-    plt.figure(figsize=(12,8), dpi=100)
-    plt.plot(original_df['Date'][-50:],original_df['Adj Close'][-50:], label='BTC Price')
-    future_7_days =  [str(datetime.datetime(2023, 1, 1, 0, 0, 0) + datetime.timedelta(days=x)) for x in range(7)]
-    plt.plot(future_7_days, np.exp(fc_mean), label='mean_forecast', linewidth = 1.5)
-    plt.fill_between(future_7_days, np.exp(fc_lower),np.exp(fc_upper), color='b', alpha=.1, label = '95% Confidence')
+def model(df, p_d_q, isARIMAX=False):    
+    time_series = np.log(df['Adj Close'])
+    
+    if not isARIMAX:
+        model = ARIMA(time_series, order=p_d_q)
+        fitted = model.fit()
+        fc = fitted.get_forecast(steps=7)
+    else:
+        exog = df['encoded_sentiment']
+        model = SARIMAX(time_series, exog=exog, order=p_d_q)
+        fitted = model.fit()
+        #here we need to get the sentiment for the first 7 days in 2022 so we cant test
+        fc = fitted.get_forecast(steps=7, exog=exog)
+    
+    fc_summary = fc.summary_frame(alpha=0.05)
+    fc_mean = fc_summary['mean']
+    fc_lower = fc_summary['mean_ci_lower']
+    fc_upper = fc_summary['mean_ci_upper']
+    
+    plt.figure(figsize=(12, 8), dpi=100)
+    plt.plot(df['Date'][-50:], df['Adj Close'][-50:], label='BTC Price')
+    future_7_days = [str(datetime.datetime(2022, 1, 1, 0, 0, 0) + datetime.timedelta(days=x)) for x in range(7)]
+    plt.plot(future_7_days, np.exp(fc_mean), label='mean_forecast', linewidth=1.5)
+    plt.fill_between(future_7_days, np.exp(fc_lower), np.exp(fc_upper), color='b', alpha=.1, label='95% Confidence')
     plt.title('7 Day Forecast')
     plt.legend(loc='upper left', fontsize=8)
     plt.show()
 
-model(original_df['Adj Close'], (10,1,10))
+model(original_df, (10,1,10))
 
+#Merge the sentiment data to the bitcoin price data
+df_sentiment = pd.read_csv('data/sentiment_summary_2021.csv')
+
+original_df['Date'] = pd.to_datetime(original_df['Date'])
+df_sentiment['Date'] = pd.to_datetime(df_sentiment['date'])
+
+merged_df = pd.merge(original_df, df_sentiment, on='Date', how='left')
+merged_df['Negative'] = merged_df['Negative'].fillna(method='ffill')
+merged_df['Nuetral'] = merged_df['Nuetral'].fillna(method='ffill')
+merged_df['Positive'] = merged_df['Positive'].fillna(method='ffill')
+merged_df['sentiment_of_the_day'] = merged_df['sentiment_of_the_day'].fillna(method='ffill')
+
+
+merged_df.to_csv('data/price_with_sentiment_merged.csv', index=False)
+
+#Encoding the exogenous variable
+label_encoder = LabelEncoder()
+merged_df['encoded_sentiment'] = label_encoder.fit_transform(merged_df['sentiment_of_the_day'])
+
+fitted_model = model(merged_df, (10,1,10), True)
