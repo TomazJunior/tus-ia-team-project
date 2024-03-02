@@ -12,19 +12,20 @@ from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 import pmdarima as pm
 import datetime
 from sklearn.preprocessing import LabelEncoder
+import matplotlib.dates as mdates
 
 def setUpTheData():
-    df = pd.DataFrame(yf.download('BTC-USD', start='2021-01-01', end='2021-12-31'))
+    df = pd.DataFrame(yf.download('BTC-USD', start='2021-01-11', end='2022-01-11'))
     df = df.drop(['Open', 'High', 'Low', 'Close', 'Volume'], axis=1)
     print(df.info())
     # df['Date'] = pd.to_datetime(df['date'])
     # df = df.set_index('Date') 
     # df = df.loc['2021-01-01':'2021-12-31']
-    df.to_csv('data/bitcoin_2022_dataset.csv')
+    df.to_csv('data/bitcoin_2021_dataset.csv')
 
 setUpTheData()
 #Make the time series stationary
-df = pd.read_csv('data/bitcoin_2022_dataset.csv')
+df = pd.read_csv('data/bitcoin_2021_dataset.csv')
 original_df = df.copy()
 
 df['Adj Close'] = np.log(df['Adj Close'])
@@ -118,31 +119,37 @@ def model(df, p_d_q, isARIMAX=False):
         model = SARIMAX(time_series, exog=exog, order=p_d_q)
         fitted = model.fit()
         #here we need to get the sentiment for the first 7 days in 2022 so we cant test
-        fc = fitted.get_forecast(steps=7, exog=exog)
+        #Encoding the exogenous variable
+        exog_df_2022 = pd.read_csv('data/sentiment_summary_2022.csv')
+        exog_df_2022['Date'] = pd.to_datetime(exog_df_2022['date'], format = '%Y-%m-%d')
+        label_encoder = LabelEncoder()
+        exog_df_2022['encoded_sentiment'] = label_encoder.fit_transform(exog_df_2022['sentiment_of_the_day'])
+        exog_forecast_data = exog_df_2022[:7]
+        fc = fitted.get_forecast(steps=7, exog=exog_forecast_data['encoded_sentiment'])
     
     fc_summary = fc.summary_frame(alpha=0.05)
     fc_mean = fc_summary['mean']
     fc_lower = fc_summary['mean_ci_lower']
     fc_upper = fc_summary['mean_ci_upper']
     
-    plt.figure(figsize=(12, 8), dpi=100)
-    plt.plot(df['Date'][-50:], df['Adj Close'][-50:], label='BTC Price')
-    future_7_days = [str(datetime.datetime(2022, 1, 1, 0, 0, 0) + datetime.timedelta(days=x)) for x in range(7)]
-    plt.plot(future_7_days, np.exp(fc_mean), label='mean_forecast', linewidth=1.5)
-    plt.fill_between(future_7_days, np.exp(fc_lower), np.exp(fc_upper), color='b', alpha=.1, label='95% Confidence')
+    plt.figure(figsize=(24, 24), dpi=100)
+    plt.plot(df['Date'][-10:], df['Adj Close'][-10:], label='BTC Price', marker='o')
+    future_7_days = [str(datetime.datetime(2022, 1, 11) + datetime.timedelta(days=x)).split()[0] for x in range(7)]
+    plt.plot(future_7_days, np.exp(fc_mean), label='mean_forecast', linewidth=1.5, marker='o')
+    plt.fill_between(future_7_days, np.exp(fc_lower), np.exp(fc_upper), color='g', alpha=.1, label='95% Confidence')
     plt.title('7 Day Forecast')
+    plt.xticks(rotation=45, ha='right', fontsize=8)
     plt.legend(loc='upper left', fontsize=8)
     plt.show()
 
 model(original_df, (10,1,10))
 
 #Merge the sentiment data to the bitcoin price data
-df_sentiment = pd.read_csv('data/sentiment_summary_2021.csv')
+df_sentiment_2021 = pd.read_csv('data/sentiment_summary_2021.csv')
+original_df['Date'] = pd.to_datetime(original_df['Date'], format = '%Y-%m-%d')
+df_sentiment_2021['Date'] = pd.to_datetime(df_sentiment_2021['date'], format = '%Y-%m-%d')
 
-original_df['Date'] = pd.to_datetime(original_df['Date'])
-df_sentiment['Date'] = pd.to_datetime(df_sentiment['date'])
-
-merged_df = pd.merge(original_df, df_sentiment, on='Date', how='left')
+merged_df = pd.merge(original_df, df_sentiment_2021, on='Date', how='left')
 merged_df['Negative'] = merged_df['Negative'].fillna(method='ffill')
 merged_df['Nuetral'] = merged_df['Nuetral'].fillna(method='ffill')
 merged_df['Positive'] = merged_df['Positive'].fillna(method='ffill')
@@ -153,6 +160,7 @@ merged_df.to_csv('data/price_with_sentiment_merged.csv', index=False)
 
 #Encoding the exogenous variable
 label_encoder = LabelEncoder()
+merged_df['Date']  = merged_df['Date'].astype('str')
 merged_df['encoded_sentiment'] = label_encoder.fit_transform(merged_df['sentiment_of_the_day'])
 
 fitted_model = model(merged_df, (10,1,10), True)
