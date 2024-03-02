@@ -137,7 +137,7 @@ def model(df, p_d_q, isARIMAX=False):
     future_7_days = [str(datetime.datetime(2022, 1, 11) + datetime.timedelta(days=x)).split()[0] for x in range(7)]
     plt.plot(future_7_days, np.exp(fc_mean), label='mean_forecast', linewidth=1.5, marker='o')
     plt.fill_between(future_7_days, np.exp(fc_lower), np.exp(fc_upper), color='g', alpha=.1, label='95% Confidence')
-    plt.title('7 Day Forecast')
+    plt.title('Forecasted Price: 11 January 2022 - 17 January 2022')
     plt.xticks(rotation=45, ha='right', fontsize=8)
     plt.legend(loc='upper left', fontsize=8)
     plt.show()
