@@ -13,6 +13,7 @@ import pmdarima as pm
 import datetime
 from sklearn.preprocessing import LabelEncoder
 import matplotlib.dates as mdates
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 def setUpTheData():
     df = pd.DataFrame(yf.download('BTC-USD', start='2021-01-11', end='2022-01-11'))
@@ -107,7 +108,18 @@ def auto_arima(orig_df):
 
 auto_p_d_q, differenced_by_auto_arima, fitted_residuals = auto_arima(original_df)
 
-def model(df, p_d_q, isARIMAX=False):    
+def evaluate_model(forecast, name):
+    actual_figures_for_time_period = [42737.08, 44009.50,42596.13,43098.80,43288.90, 43203.21,42252.79]
+    mae = mean_absolute_error(actual_figures_for_time_period, forecast)
+    mse = mean_squared_error(actual_figures_for_time_period, forecast)
+    rmse = np.sqrt(mse)
+    
+    print(f'{name} Model Evaluation:')
+    print(f'Mean Absolute Error (MAE): {mae}')
+    print(f'Mean Squared Error (MSE): {mse}')
+    print(f'Root Mean Squared Error (RMSE): {rmse}')
+
+def model(df, namePlot, p_d_q,isARIMAX=False):    
     time_series = np.log(df['Adj Close'])
     
     if not isARIMAX:
@@ -118,7 +130,7 @@ def model(df, p_d_q, isARIMAX=False):
         exog = df['encoded_sentiment']
         model = SARIMAX(time_series, exog=exog, order=p_d_q)
         fitted = model.fit()
-        #here we need to get the sentiment for the first 7 days in 2022 so we cant test
+
         #Encoding the exogenous variable
         exog_df_2022 = pd.read_csv('data/sentiment_summary_2022.csv')
         exog_df_2022['Date'] = pd.to_datetime(exog_df_2022['date'], format = '%Y-%m-%d')
@@ -137,12 +149,17 @@ def model(df, p_d_q, isARIMAX=False):
     future_7_days = [str(datetime.datetime(2022, 1, 11) + datetime.timedelta(days=x)).split()[0] for x in range(7)]
     plt.plot(future_7_days, np.exp(fc_mean), label='mean_forecast', linewidth=1.5, marker='o')
     plt.fill_between(future_7_days, np.exp(fc_lower), np.exp(fc_upper), color='g', alpha=.1, label='95% Confidence')
+    for i, txt in enumerate(np.exp(fc_mean)):
+        plt.text(future_7_days[i], txt, f'{round(txt, 2)}', ha='right', va='bottom')
     plt.title('Forecasted Price: 11 January 2022 - 17 January 2022')
     plt.xticks(rotation=45, ha='right', fontsize=8)
     plt.legend(loc='upper left', fontsize=8)
+    plt.savefig(f'visualizations/{namePlot}')
     plt.show()
+    print(np.exp(fc_mean))
+    evaluate_model(np.exp(fc_mean), namePlot)
 
-model(original_df, (10,1,10))
+model(original_df, 'forecast_without_sentiment', (10,1,10))
 
 #Merge the sentiment data to the bitcoin price data
 df_sentiment_2021 = pd.read_csv('data/sentiment_summary_2021.csv')
@@ -163,4 +180,4 @@ label_encoder = LabelEncoder()
 merged_df['Date']  = merged_df['Date'].astype('str')
 merged_df['encoded_sentiment'] = label_encoder.fit_transform(merged_df['sentiment_of_the_day'])
 
-fitted_model = model(merged_df, (10,1,10), True)
+fitted_model = model(merged_df,'forecast_with_sentiment', (10,1,10), True)
