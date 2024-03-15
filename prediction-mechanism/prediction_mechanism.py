@@ -1,143 +1,93 @@
-import yfinance as yf
-import random
 import pandas as pd
 import numpy as np
-from statsmodels.tsa.statespace.sarimax import SARIMAX
-from statsmodels.tsa.stattools import kpss
-from statsmodels.tsa.arima.model import ARIMA
-from statsmodels.stats.diagnostic import acorr_ljungbox
 import matplotlib.pyplot as plt
-from statsmodels.tsa.stattools import adfuller
-from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from statsmodels.tsa.stattools import adfuller, kpss
+from statsmodels.tsa.arima.model import ARIMA
 import pmdarima as pm
 import datetime
-from sklearn.preprocessing import LabelEncoder
-import matplotlib.dates as mdates
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+import matplotlib.dates as mdates
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from sklearn.preprocessing import LabelEncoder
 
-def setUpTheData():
-    df = pd.DataFrame(yf.download('BTC-USD', start='2021-01-11', end='2022-01-11'))
-    df = df.drop(['Open', 'High', 'Low', 'Close', 'Volume'], axis=1)
-    print(df.info())
-    # df['Date'] = pd.to_datetime(df['date'])
-    # df = df.set_index('Date') 
-    # df = df.loc['2021-01-01':'2021-12-31']
-    df.to_csv('data/bitcoin_2021_dataset.csv')
+initial_df = None
 
-setUpTheData()
-#Make the time series stationary
-df = pd.read_csv('data/bitcoin_2021_dataset.csv')
-original_df = df.copy()
-
-df['Adj Close'] = np.log(df['Adj Close'])
-def visualise(df):
-    fig, ax = plt.subplots(figsize=(12, 8), dpi=100)
-    ax.plot(df['Date'], df['Adj Close'])
-    plt.show()
-
-#Test to see if the data is stationary, need p_value less than 0.05 here or kpss
-def adt(df):
-    result = adfuller(df['Adj Close'].dropna())
-    print('ADF Statistic:', result[0])
-    print('p-value:', result[1])
-    print('Critical Values:', result[4])
-    return result[0], result [1]
-
-#Similar test for stationary data, need p_value less than 0.05 here or adt
-def kpss_testing(df):
-    result_kpss = kpss(df['Adj Close'], regression='c', nlags='auto')
-    print('KPSS Statistic:', result_kpss[0])
-    print('p-value:', result_kpss[1])
-    print('Critical Values:', result_kpss[3])
-    return result_kpss[0], result_kpss[1]
-
-adt_result, adt_p_value = adt(df)
-kpss_result, kpss_p_value = kpss_testing(df)
-
-#Finding the optimal number of differencing
-def find_difference_value(p_value, df):
-    if p_value > .05:
-        difference_value = 0
-        while p_value > 0.05:
-            print('\n p value too large, trying differencing \n')
-            df['Adj Close'] = df['Adj Close'].diff()
-            df.dropna(inplace=True)
-            difference_value += 1 
-            statistic, p_value = adt(df)
-        
-        print(f'Success. Significant values achieved after {difference_value} differencing')
+def load_data(file_path):
+    global initial_df
+    df = pd.read_csv(file_path)
+    df['Date'] = pd.to_datetime(df['Timestamp'], unit='ms')
+    df.set_index('Date', inplace=True)
+    df.rename(columns={'Close': 'Adj Close'}, inplace=True)
+    initial_df = df
+    start_date = '2021-04-05 11:45:00'
+    end_date = '2021-04-12 18:15:00'
+    end_date_inital = '2021-04-12 18:55:00'
+    initial_df = df.loc[(df.index >= start_date) & (df.index <= end_date_inital)]
+    df = df.loc[(df.index >= start_date) & (df.index <= end_date)]
+    df.drop(['Open', 'High', 'Low', 'Volume'], axis=1, inplace=True)
+    df.to_csv('data/FinalFigures.csv')
     return df
 
-# Find order of differencing 
-df = find_difference_value(adt_p_value, df)
-# run kpss on differenced data 
-kpss_testing(df)
+def visualize(df):
+    plt.figure(figsize=(12, 8))
+    plt.plot(df.index, df['Adj Close'])
+    plt.title('Bitcoin Price')
+    plt.xlabel('Date')
+    plt.ylabel('Price (USD)')
+    plt.grid(True)
+    plt.show()
 
-#visualise the constant mean and variance
-visualise(df)
+def test_stationarity(df):
+    adf_result = adfuller(df['Adj Close'].dropna())
+    kpss_result = kpss(df['Adj Close'], regression='c', nlags='auto')
+    return adf_result, kpss_result
 
-#Now that it is stationary, we must find the AR and MA values
-# Plot ACF
-plot_acf(df['Adj Close'].dropna(), lags=20)
-plt.title('Autocorrelation Function (ACF)')
-plt.show()
-# Plot PACF
-plot_pacf(df['Adj Close'].dropna(), lags=20)
-plt.title('Partial Autocorrelation Function (PACF)')
-plt.show()
+def difference_series(df):
+    df['Adj Close'] = df['Adj Close'].fillna(method='bfill') 
+    diff = df[['Adj Close']].diff().dropna() 
+    return diff
 
-def auto_arima(orig_df):
-    orig_df = np.log(orig_df['Adj Close'])
-    model = pm.auto_arima(orig_df,
-                          start_p=10,
-                          start_q=10,
-                          test='adf',
-                          max_p=10, 
-                          max_q=10, 
-                          m=1,
-                          d=None,           
-                          seasonal=False,   
-                          D=0, 
-                          trace=True,
-                          error_action='ignore',  
-                          suppress_warnings=True,
-                         stepwise = True)
-    # difference df by d found by auto arima
-    differenced_by_auto_arima = orig_df.diff(model.order[1])
-    return model.order, differenced_by_auto_arima, model.resid()
+def auto_arima_model(orig_df, exog=None):
+    orig_df['Adj Close'] = orig_df['Adj Close'].apply(lambda x: max(x, 0.0001))
 
-auto_p_d_q, differenced_by_auto_arima, fitted_residuals = auto_arima(original_df)
+    log_prices = np.log(orig_df['Adj Close'])
+    if exog is not None:
+        model = pm.auto_arima(log_prices, exogenous=exog, start_p=1, start_q=1,
+                              test='adf',
+                              max_p=3, max_q=3, m=1,
+                              d=None, seasonal=False,
+                              trace=True, error_action='ignore',
+                              suppress_warnings=True, stepwise=True)
+    else:
+        model = pm.auto_arima(log_prices, start_p=1, start_q=1,
+                              test='adf',
+                              max_p=3, max_q=3, m=1,
+                              d=None, seasonal=False,
+                              trace=True, error_action='ignore',
+                              suppress_warnings=True, stepwise=True)
 
-def evaluate_model(forecast, name):
-    actual_figures_for_time_period = [42737.08, 44009.50,42596.13,43098.80,43288.90, 43203.21,42252.79]
-    mae = mean_absolute_error(actual_figures_for_time_period, forecast)
-    mse = mean_squared_error(actual_figures_for_time_period, forecast)
+    order = model.order
+    differenced_series = log_prices.diff(order[1]).dropna()
+    residuals = model.arima_res_.resid
+    return order, differenced_series, residuals
+
+def evaluate_forecast(actual, forecast):
+    mae = mean_absolute_error(actual, forecast)
+    mse = mean_squared_error(actual, forecast)
     rmse = np.sqrt(mse)
-    
-    print(f'{name} Model Evaluation:')
-    print(f'Mean Absolute Error (MAE): {mae}')
-    print(f'Mean Squared Error (MSE): {mse}')
-    print(f'Root Mean Squared Error (RMSE): {rmse}')
+    return mae, mse, rmse
 
-def model(df, namePlot, p_d_q,isARIMAX=False):    
-    time_series = np.log(df['Adj Close'])
-    
+def model(df_index, namePlot, p_d_q, isARIMAX=False, exog_df = None):  
+    time_series = np.log(df_index['Adj Close'])
     if not isARIMAX:
         model = ARIMA(time_series, order=p_d_q)
         fitted = model.fit()
-        fc = fitted.get_forecast(steps=7)
+        fc = fitted.get_forecast(steps=7, dynamic=True)
     else:
-        exog = df['encoded_sentiment']
+        exog = df_index['encoded_sentiment']
         model = SARIMAX(time_series, exog=exog, order=p_d_q)
         fitted = model.fit()
-
-        #Encoding the exogenous variable
-        exog_df_2022 = pd.read_csv('data/sentiment_summary_2022.csv')
-        exog_df_2022['Date'] = pd.to_datetime(exog_df_2022['date'], format = '%Y-%m-%d')
-        label_encoder = LabelEncoder()
-        exog_df_2022['encoded_sentiment'] = label_encoder.fit_transform(exog_df_2022['sentiment_of_the_day'])
-        exog_forecast_data = exog_df_2022[:7]
-        fc = fitted.get_forecast(steps=7, exog=exog_forecast_data['encoded_sentiment'])
+        fc = fitted.get_forecast(steps=7, exog=exog_df, dynamic=True)
     
     fc_summary = fc.summary_frame(alpha=0.05)
     fc_mean = fc_summary['mean']
@@ -145,39 +95,64 @@ def model(df, namePlot, p_d_q,isARIMAX=False):
     fc_upper = fc_summary['mean_ci_upper']
     
     plt.figure(figsize=(24, 24), dpi=100)
-    plt.plot(df['Date'][-10:], df['Adj Close'][-10:], label='BTC Price', marker='o')
-    future_7_days = [str(datetime.datetime(2022, 1, 11) + datetime.timedelta(days=x)).split()[0] for x in range(7)]
-    plt.plot(future_7_days, np.exp(fc_mean), label='mean_forecast', linewidth=1.5, marker='o')
+    plt.plot(df_index.index[-10:], df_index['Adj Close'][-10:], label='BTC Price', marker='o')
+
+    start_datetime = datetime.datetime(2021, 4, 12, 18, 20, 0)
+    fc_value = np.exp(fc_mean)
+    mae, mse, rmse = evaluate_forecast(initial_df['Adj Close'][-7:], fc_value)
+    print(f'Forecast {namePlot} Evaluation:')
+    print('Mean Absolute Error (MAE):', mae)
+    print('Mean Squared Error (MSE):', mse)
+    print('Root Mean Squared Error (RMSE):', rmse)
+    future_7_days = [start_datetime + datetime.timedelta(minutes=5 * x) for x in range(7)]
+    plt.plot(future_7_days, fc_value, label='mean_forecast', linewidth=1.5, marker='o')
     plt.fill_between(future_7_days, np.exp(fc_lower), np.exp(fc_upper), color='g', alpha=.1, label='95% Confidence')
     for i, txt in enumerate(np.exp(fc_mean)):
         plt.text(future_7_days[i], txt, f'{round(txt, 2)}', ha='right', va='bottom')
-    plt.title('Forecasted Price: 11 January 2022 - 17 January 2022')
+    plt.title(f'Forecasted Price {namePlot}: 5 Minute intervals April 2021')
     plt.xticks(rotation=45, ha='right', fontsize=8)
     plt.legend(loc='upper left', fontsize=8)
     plt.savefig(f'visualizations/{namePlot}')
     plt.show()
-    print(np.exp(fc_mean))
-    evaluate_model(np.exp(fc_mean), namePlot)
-
-model(original_df, 'forecast_without_sentiment', (10,1,10))
-
-#Merge the sentiment data to the bitcoin price data
-df_sentiment_2021 = pd.read_csv('data/sentiment_summary_2021.csv')
-original_df['Date'] = pd.to_datetime(original_df['Date'], format = '%Y-%m-%d')
-df_sentiment_2021['Date'] = pd.to_datetime(df_sentiment_2021['date'], format = '%Y-%m-%d')
-
-merged_df = pd.merge(original_df, df_sentiment_2021, on='Date', how='left')
-merged_df['Negative'] = merged_df['Negative'].fillna(method='ffill')
-merged_df['Nuetral'] = merged_df['Nuetral'].fillna(method='ffill')
-merged_df['Positive'] = merged_df['Positive'].fillna(method='ffill')
-merged_df['sentiment_of_the_day'] = merged_df['sentiment_of_the_day'].fillna(method='ffill')
 
 
-merged_df.to_csv('data/price_with_sentiment_merged.csv', index=False)
+def main():
+    file_path = 'data/btc_usd_5m_bitstamp_18-08-2011_27-04-2021.csv'
+    df = load_data(file_path)
+    orig_df = df.copy()
+    visualize(df)
 
-#Encoding the exogenous variable
-label_encoder = LabelEncoder()
-merged_df['Date']  = merged_df['Date'].astype('str')
-merged_df['encoded_sentiment'] = label_encoder.fit_transform(merged_df['sentiment_of_the_day'])
+    adf_result, kpss_result = test_stationarity(df)
+    print('ADF Statistic:', adf_result[0])
+    print('ADF p-value:', adf_result[1])
+    print('KPSS Statistic:', kpss_result[0])
+    print('KPSS p-value:', kpss_result[1])
 
-fitted_model = model(merged_df,'forecast_with_sentiment', (10,1,10), True)
+    if adf_result[1] > 0.05:
+        print('Data is not stationary. Performing differencing...')
+        df = difference_series(df)
+        adf_result, kpss_result = test_stationarity(df)
+        print('ADF Statistic after differencing:', adf_result[0])
+        print('ADF p-value after differencing:', adf_result[1])
+        print('KPSS Statistic after differencing:', kpss_result[0])
+        print('KPSS p-value after differencing:', kpss_result[1])
+
+    exog = None 
+    
+    order, differenced_series, residuals = auto_arima_model(df, exog=exog)
+    print('ARIMA Order:', order)
+    model(orig_df, 'Without Sentiment', order)
+    merged_df = pd.read_csv('data/price_with_sentiment_merged.csv')
+    label_encoder = LabelEncoder()
+    merged_df['encoded_sentiment'] = label_encoder.fit_transform(merged_df['sentiment_of_the_day'])
+    order_with_exo, differenced_series, residuals = auto_arima_model(merged_df[:-7], exog='encoded_sentiment')
+    merged_df['Date'] = pd.to_datetime(merged_df['Timestamp'], unit='ms')
+    merged_df.set_index('Date', inplace=True)
+    start_date = '2021-04-05 11:45:00'
+    end_date = '2021-04-12 18:15:00'
+    merged_df = merged_df.loc[(merged_df.index >= start_date) & (merged_df.index <= end_date)]
+    exog_df = merged_df['encoded_sentiment'][-7:]
+    model(merged_df, 'With Sentiment', order_with_exo, True, exog_df=exog_df)
+
+if __name__ == "__main__":
+    main()
