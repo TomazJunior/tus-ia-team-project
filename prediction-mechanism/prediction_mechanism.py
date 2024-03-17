@@ -94,9 +94,8 @@ def model(df_index, namePlot, p_d_q, isARIMAX=False, exog_df = None):
     fc_lower = fc_summary['mean_ci_lower']
     fc_upper = fc_summary['mean_ci_upper']
     
-    plt.figure(figsize=(24, 24), dpi=100)
+    plt.figure(figsize=(12, 10), dpi=200)
     plt.plot(df_index.index[-10:], df_index['Adj Close'][-10:], label='BTC Price', marker='o')
-
     start_datetime = datetime.datetime(2021, 4, 12, 18, 20, 0)
     fc_value = np.exp(fc_mean)
     mae, mse, rmse = evaluate_forecast(initial_df['Adj Close'][-7:], fc_value)
@@ -104,14 +103,15 @@ def model(df_index, namePlot, p_d_q, isARIMAX=False, exog_df = None):
     print('Mean Absolute Error (MAE):', mae)
     print('Mean Squared Error (MSE):', mse)
     print('Root Mean Squared Error (RMSE):', rmse)
+    past_10_days = [datetime.datetime(2021, 4, 12, 17, 30, 0) + datetime.timedelta(minutes=5 * x) for x in range(10)]
     future_7_days = [start_datetime + datetime.timedelta(minutes=5 * x) for x in range(7)]
-    plt.plot(future_7_days, fc_value, label='mean_forecast', linewidth=1.5, marker='o')
-    plt.fill_between(future_7_days, np.exp(fc_lower), np.exp(fc_upper), color='g', alpha=.1, label='95% Confidence')
-    for i, txt in enumerate(np.exp(fc_mean)):
-        plt.text(future_7_days[i], txt, f'{round(txt, 2)}', ha='right', va='bottom')
+    plt.plot(future_7_days, fc_value, label='Forecast', linewidth=1.5, marker='o', color='#00E4A4')
+    plt.fill_between(future_7_days, np.exp(fc_lower), np.exp(fc_upper), color='#ffb61c', alpha=.8, label='95% Confidence')
+    # for i, txt in enumerate(np.exp(fc_mean)):
+    #     plt.text(future_7_days[i], txt + 140, f'{round(txt, 2)}', ha='left', va='top', rotation=35, fontsize=8)
     plt.title(f'Forecasted Price {namePlot}: 5 Minute intervals April 2021')
-    plt.xticks(rotation=45, ha='right', fontsize=8)
-    plt.legend(loc='upper left', fontsize=8)
+    plt.xticks((past_10_days+ future_7_days),[dt.strftime('%H:%M') for dt in (past_10_days+ future_7_days)], rotation=45, ha='right', fontsize=10)
+    plt.legend(loc='upper right', fontsize=8)
     plt.savefig(f'visualizations/{namePlot}')
     plt.show()
 
